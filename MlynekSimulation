@@ -1,0 +1,161 @@
+import java.util.Scanner;
+
+public class MlynekSimulation {
+
+    public static void main(String[] args) {
+        MlynekState gameState = new MlynekState();
+        gameState.maximizingTurnNow = true; // Ход белых
+        gameState.whitePiecesToPlace = 9;
+        gameState.blackPiecesToPlace = 9;
+
+        Scanner scanner = new Scanner(System.in);
+        boolean gameRunning = true;
+
+        // Игровой цикл
+        while (gameRunning) {
+            System.out.println("Текущий статус игры:");
+            printBoard(gameState); // Печать текущей доски
+            System.out.println("Ход " + (gameState.maximizingTurnNow ? "белых" : "черных"));
+
+            // Игрок размещает фишку или перемещает фишку
+            if (gameState.whitePiecesToPlace > 0 || gameState.blackPiecesToPlace > 0) {
+                // Этап размещения
+                System.out.println("Введите координаты для размещения фишки (например: 7b):");
+                String input = scanner.nextLine();
+
+                // Преобразуем координаты в индексы массива
+                int[] coords = parseCoordinates(input);
+                if (coords != null && gameState.getBoard()[coords[0]][coords[1]] == 0) {
+                    gameState.getBoard()[coords[0]][coords[1]] = gameState.maximizingTurnNow ? 1 : -1;
+                    if (gameState.maximizingTurnNow) gameState.whitePiecesToPlace--;
+                    else gameState.blackPiecesToPlace--;
+                    gameState.maximizingTurnNow = !gameState.maximizingTurnNow;
+                } else {
+                    System.out.println("Неверные координаты или клетка занята. Попробуйте снова.");
+                }
+            } else {
+                // Этап перемещения
+                System.out.println("Введите координаты для перемещения фишки (например: 7b):");
+                String input = scanner.nextLine();
+
+                // Преобразуем координаты в индексы массива
+                int[] coords = parseCoordinates(input);
+                if (coords != null && gameState.getBoard()[coords[0]][coords[1]] != 0) {
+                    System.out.println("Введите целевую клетку для перемещения (например: 6c):");
+                    String targetInput = scanner.nextLine();
+                    int[] targetCoords = parseCoordinates(targetInput);
+
+                    if (targetCoords != null && gameState.getBoard()[targetCoords[0]][targetCoords[1]] == 0) {
+                        gameState.getBoard()[targetCoords[0]][targetCoords[1]] = gameState.getBoard()[coords[0]][coords[1]];
+                        gameState.getBoard()[coords[0]][coords[1]] = 0;
+                        gameState.maximizingTurnNow = !gameState.maximizingTurnNow;
+                    } else {
+                        System.out.println("Неверные целевые координаты или клетка занята. Попробуйте снова.");
+                    }
+                } else {
+                    System.out.println("Неверные координаты или пустая клетка. Попробуйте снова.");
+                }
+            }
+
+            // Проверка на победу
+            if (isGameOver(gameState)) {
+                gameRunning = false;
+                System.out.println("Игра окончена!");
+                System.out.println("Победитель: " + (gameState.maximizingTurnNow ? "черные" : "белые"));
+            }
+        }
+        scanner.close();
+    }
+
+    private static int[] parseCoordinates(String input) {
+        if (input.length() != 2) {
+            return null;
+        }
+
+        // Извлекаем букву и цифру из ввода
+        char column = input.charAt(1);
+        int row = Character.getNumericValue(input.charAt(0)) - 1; // Преобразуем строку в индекс (0-6)
+        int col = column - 'a'; // Преобразуем букву в индекс (0-6)
+
+        // Проверяем, что координаты лежат в пределах доски
+        if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+            return new int[]{row, col};
+        }
+
+        return null;
+    }
+
+
+    private static boolean isGameOver(MlynekState gameState) {
+        // Проверяем, если все фишки размещены, то начинаем проверку на конец игры
+        if (gameState.whitePiecesToPlace > 0 || gameState.blackPiecesToPlace > 0) {
+            // Игра продолжается, если фишки еще не размещены
+            return false;
+        }
+
+        // Подсчитываем количество фишек у каждого игрока
+        int whiteCount = 0, blackCount = 0;
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 7; j++) {
+                if (gameState.getBoard()[i][j] == 1) whiteCount++;
+                if (gameState.getBoard()[i][j] == -1) blackCount++;
+            }
+        }
+
+        // Игра завершена, если у одного из игроков меньше 3 фишек
+        return whiteCount < 3 || blackCount < 3;
+    }
+
+    private static void printBoard(MlynekState state) {
+        // Заполняем доску пустыми клетками
+        String[][] board = new String[7][7];
+
+        // Размещаем фишки на доске
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 7; j++) {
+                if (state.getBoard()[i][j] == 1) {
+                    board[i][j] = "W"; // Белая фишка
+                } else if (state.getBoard()[i][j] == -1) {
+                    board[i][j] = "B"; // Черная фишка
+                } else {
+                    board[i][j] = " ";  // Пустая клетка
+                }
+            }
+        }
+
+        // Печать заголовков столбцов
+        System.out.println("    a   b   c   d   e   f   g");
+        System.out.println("  +---+---+---+---+---+---+---+");
+
+        // Печать каждой строки доски
+        for (int i = 0; i < 7; i++) {
+            System.out.print((i + 1) + " | ");  // Печать номера строки
+            for (int j = 0; j < 7; j++) {
+                // Печатаем только те клетки, на которые можно ходить
+                if (isMovePossible(i, j)) {
+                    System.out.print(board[i][j] + " | ");  // Печать фишек или пустых клеток
+                } else {
+                    System.out.print("* | ");  // Недоступная клетка
+                }
+            }
+            System.out.println();
+            System.out.println("  +---+---+---+---+---+---+---+");
+        }
+    }
+
+
+
+
+    // Метод для проверки, доступна ли клетка для хода
+    private static boolean isMovePossible(int i, int j) {
+        // Доступные клетки:
+        return (i == 0 && (j == 0 || j == 3 || j == 6)) ||   // 1a, 1d, 1g
+                (i == 1 && (j == 1 || j == 3 || j == 5)) ||   // 2b, 2d, 2f
+                (i == 2 && (j == 2 || j == 3 || j == 4)) ||   // 3c, 3d, 3e
+                (i == 3 && (j == 0 || j == 1 || j == 2 || j == 4 || j == 5 || j == 6)) ||   // 4a, 4b, 4c, 4e, 4f, 4g
+                (i == 4 && (j == 2 || j == 3 || j == 4)) ||   // 5c, 5d, 5e
+                (i == 5 && (j == 1 || j == 3 || j == 5)) ||   // 6b, 6d, 6f
+                (i == 6 && (j == 0 || j == 3 || j == 6));     // 7a, 7d, 7g
+    }
+
+}
