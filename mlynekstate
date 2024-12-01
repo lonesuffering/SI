@@ -1,0 +1,200 @@
+import sac.game.GameState;
+import sac.game.GameStateImpl;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+public class MlynekState extends GameStateImpl implements Cloneable {
+
+    private int[][] board = new int[7][7];  // 0 - пустая клетка, 1 - белая фишка, -1 - черная фишка
+    public int whitePiecesToPlace = 9, blackPiecesToPlace = 9; // Количество фишек для размещения
+    public boolean maximizingTurnNow = true;
+
+    // Метод получения доски
+    public int[][] getBoard() {
+        return board;
+    }
+
+    public void setBoard(int[][] newBoard) {
+        this.board = newBoard;
+    }
+
+    public MlynekState() {
+        // Инициализация доски (все клетки пустые)
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 7; j++) {
+                board[i][j] = 0;
+            }
+        }
+    }
+
+
+    public List<GameState> generateChildren() {
+        List<GameState> children = new ArrayList<>();
+
+        if (whitePiecesToPlace > 0 || blackPiecesToPlace > 0) {
+            // Этап размещения
+            for (int i = 0; i < 7; i++) { // Перебираем 7 строк
+                for (int j = 0; j < 7; j++) { // Перебираем 7 столбцов
+                    if (board[i][j] == 0) { // Свободная ячейка
+                        MlynekState child = this.clone(); // Создаем клон текущего состояния
+                        child.board[i][j] = maximizingTurnNow ? 1 : -1; // Размещаем фишку
+                        if (maximizingTurnNow) child.whitePiecesToPlace--;
+                        else child.blackPiecesToPlace--;
+                        child.maximizingTurnNow = !this.maximizingTurnNow;
+                        child.setMoveName("Place: " + i + "-" + j);
+
+                        // Проверка на "мельницу"
+                        if (child.formsMill(i, j, maximizingTurnNow ? 1 : -1)) {
+                            child.addMillChildren(children);  // Убираем параметры i и j
+                        } else {
+                            children.add(child);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Этап перемещения
+            for (int i = 0; i < 7; i++) { // Перебираем 7 строк
+                for (int j = 0; j < 7; j++) { // Перебираем 7 столбцов
+                    if ((maximizingTurnNow && board[i][j] == 1) || (!maximizingTurnNow && board[i][j] == -1)) {
+                        for (int[] neighbor : getNeighbors(i, j)) {
+                            int ni = neighbor[0], nj = neighbor[1];
+                            if (ni >= 0 && ni < 7 && nj >= 0 && nj < 7 && board[ni][nj] == 0) { // Свободная ячейка в пределах 7x7
+                                MlynekState child = this.clone(); // Используем clone()
+                                child.board[i][j] = 0;
+                                child.board[ni][nj] = maximizingTurnNow ? 1 : -1;
+                                child.maximizingTurnNow = !this.maximizingTurnNow;
+                                child.setMoveName("Move: " + i + "-" + j + "->" + ni + "-" + nj);
+
+                                // Проверка на "мельницу"
+                                if (child.formsMill(ni, nj, maximizingTurnNow ? 1 : -1)) {
+                                    child.addMillChildren(children);  // Убираем параметры i и j
+                                } else {
+                                    children.add(child);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return children;
+    }
+
+
+
+
+
+    private List<int[]> getNeighbors(int i, int j) {
+        List<int[]> neighbors = new ArrayList<>();
+
+        // Проверка на соседей по горизонтали и вертикали
+        if (j > 0) neighbors.add(new int[]{i, j - 1}); // Левая клетка
+        if (j < 6) neighbors.add(new int[]{i, j + 1}); // Правая клетка
+        if (i > 0) neighbors.add(new int[]{i - 1, j}); // Верхняя клетка
+        if (i < 6) neighbors.add(new int[]{i + 1, j}); // Нижняя клетка
+
+        return neighbors;
+    }
+    // Метод для проверки, доступна ли клетка для хода
+    private static boolean isMovePossible(int i, int j) {
+        // Доступные клетки:
+        return (i == 0 && (j == 0 || j == 3 || j == 6)) ||   // 1a, 1d, 1g
+                (i == 1 && (j == 1 || j == 3 || j == 5)) ||   // 2b, 2d, 2f
+                (i == 2 && (j == 2 || j == 3 || j == 4)) ||   // 3c, 3d, 3e
+                (i == 3 && (j == 0 || j == 1 || j == 2 || j == 4 || j == 5 || j == 6)) ||   // 4a, 4b, 4c, 4e, 4f, 4g
+                (i == 4 && (j == 2 || j == 3 || j == 4)) ||   // 5c, 5d, 5e
+                (i == 5 && (j == 1 || j == 3 || j == 5)) ||   // 6b, 6d, 6f
+                (i == 6 && (j == 0 || j == 3 || j == 6));     // 7a, 7d, 7g
+    }
+
+    private boolean formsMill(int i, int j, int player) {
+        // Проверяем горизонтальные мельницы
+        if (isMovePossible(i, j)) {
+            // Горизонтальные линии
+            if ((j == 0 || j == 3 || j == 6) && board[i][0] == player && board[i][3] == player && board[i][6] == player) {
+                return true;
+            }
+            if ((j == 1 || j == 3 || j == 5) && board[i][1] == player && board[i][3] == player && board[i][5] == player) {
+                return true;
+            }
+            if ((j == 2 || j == 3 || j == 4) && board[i][2] == player && board[i][3] == player && board[i][4] == player) {
+                return true;
+            }
+
+            // Вертикальные линии
+            if ((i == 0 || i == 3 || i == 6) && board[0][j] == player && board[3][j] == player && board[6][j] == player) {
+                return true;
+            }
+            if ((i == 1 || i == 3 || i == 5) && board[1][j] == player && board[3][j] == player && board[5][j] == player) {
+                return true;
+            }
+            if ((i == 2 || i == 3 || i == 4) && board[2][j] == player && board[3][j] == player && board[4][j] == player) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+    private void addMillChildren(List<GameState> children) {
+        int opponent = maximizingTurnNow ? -1 : 1; // Определяем противника
+        boolean removed = false;
+
+        // Удаляем фишки противника, которые не в мельнице
+        for (int x = 0; x < 7; x++) {
+            for (int y = 0; y < 7; y++) {
+                if (board[x][y] == opponent && !formsMill(x, y, opponent)) {
+                    MlynekState child = this.clone();
+                    child.board[x][y] = 0; // Убираем фишку
+                    child.setMoveName("Mill: Remove " + x + "-" + y);
+                    children.add(child);
+                    removed = true;
+                }
+            }
+        }
+
+        // Если все фишки противника в мельнице, удаляем любую
+        if (!removed) {
+            for (int x = 0; x < 7; x++) {
+                for (int y = 0; y < 7; y++) {
+                    if (board[x][y] == opponent) {
+                        MlynekState child = this.clone();
+                        child.board[x][y] = 0; // Убираем фишку
+                        child.setMoveName("Mill: Remove " + x + "-" + y);
+                        children.add(child);
+                        return; // Достаточно удалить одну фишку
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+
+    @Override
+    public MlynekState clone() {
+        try {
+            MlynekState clone = (MlynekState) super.clone();
+            clone.board = new int[7][7]; // 7x7
+            for (int i = 0; i < 7; i++) {
+                System.arraycopy(this.board[i], 0, clone.board[i], 0, 7);
+            }
+            return clone;
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError("Клонирование не поддерживается", e);
+        }
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 7; i++) {
+            sb.append(Arrays.toString(board[i])).append("\n");
+        }
+        return sb.toString();
+    }
+}
