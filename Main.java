@@ -4,8 +4,10 @@ import sac.game.GameStateImpl;
 import sac.game.AlphaBetaPruning;
 import sac.game.GameSearchAlgorithm;
 import java.util.List;
+import java.util.Scanner;
 
 class Position extends GameStateImpl  implements Cloneable  {
+
     private String[][] board;
     private int whitePieces;
     private int blackPieces;
@@ -190,6 +192,7 @@ class Position extends GameStateImpl  implements Cloneable  {
     }
 
 
+
     public List<Position> generateFirstPhase() {
         System.out.println("Генерация ходов для первой фазы...");
         List<Position> children = new ArrayList<>();
@@ -245,11 +248,11 @@ class Position extends GameStateImpl  implements Cloneable  {
             setBlackPieces(getBlackPieces() - 1);
         }
     }
-    @Override
-    public boolean isWinTerminal() {
+
+    public boolean isTerminalState() {
         return whitePieces < 3 || blackPieces < 3;
     }
-    @Override
+
     public int evaluate() {
         return whitePieces - blackPieces;
     }
@@ -275,13 +278,6 @@ class Position extends GameStateImpl  implements Cloneable  {
         this.blackPieces = blackPieces;
     }
 
-    public boolean isMaximizingTurnNow() {
-        return maximizingTurnNow;
-    }
-
-    public void setMaximizingTurnNow(boolean maximizingTurnNow) {
-        this.maximizingTurnNow = maximizingTurnNow;
-    }
     public int getPhase() {
         return phase;
     }
@@ -383,6 +379,7 @@ class MiniMax {
 }
 
 public class Main {
+
     public static void expand(Position position, int maxDepth) {
         long[] stateCounts = new long[maxDepth];
         expand(position, stateCounts, 0);
@@ -397,17 +394,19 @@ public class Main {
         if (currentDepth >= stateCounts.length) {
             return;
         }
-        for (Position child : position.generateChildren()) {
-            stateCounts[currentDepth]++;
-            expand(child, stateCounts, currentDepth + 1);
+        for (GameState child : position.generateChildren()) {
+            if (child instanceof Position) {
+                stateCounts[currentDepth]++;
+                expand((Position) child, stateCounts, currentDepth + 1);
+            }
         }
     }
 
     public static void main(String[] args) {
+
         Position game = new Position();
         Scanner scanner = new Scanner(System.in);
-        Position initialState = new Position();
-        int depth = 6;
+        int depth = 4;
 
         expand(game, depth);
         System.out.println("Начинаем игру 'Девять Мельниц'!");
@@ -459,12 +458,16 @@ public class Main {
                 algorithm.getConfigurator().setDepthLimit(depth); // Устанавливаем глубину
                 algorithm.execute(); // Выполняем поиск
 
-                Position bestMove = (Position) algorithm.getFirstResult(); // Получаем лучший ход
-                if (bestMove != null) {
-                    game = bestMove; // Применяем лучший ход
-                    game.displayBoard();
+                List<GameState> bestMoves; // Получаем список лучших ходов
+                bestMoves = algorithm.getBestMoves();
+                if (bestMoves != null && !bestMoves.isEmpty()) {
+                    Position bestMove = (Position) ((List<?>) algorithm.getBestMoves()).get(0);
+                    if (bestMove != null) {
+                        game = bestMove;
+                        game.displayBoard();
+                    }
 
-                    if (game.isWinTerminal()) {
+                    if (game.isTerminalState()) {
                         break;
                     }
 
