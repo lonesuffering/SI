@@ -1,0 +1,490 @@
+import java.util.*;
+import sac.game.*;
+import sac.game.GameStateImpl;
+import sac.game.AlphaBetaPruning;
+import sac.game.GameSearchAlgorithm;
+import java.util.List;
+
+class Position extends GameStateImpl  implements Cloneable  {
+    private String[][] board;
+    private int whitePieces;
+    private int blackPieces;
+    private boolean maximizingTurnNow;
+    private int phase;
+
+    public Position() {
+
+        board = new String[7][7];
+        initializeBoard();
+        whitePieces = 9;
+        blackPieces = 9;
+        maximizingTurnNow = true;
+    }
+
+    public Position(Position other) {
+        this.phase = other.phase;
+        board = new String[7][7];
+        for (int i = 0; i < 7; i++) {
+            System.arraycopy(other.board[i], 0, this.board[i], 0, 7);
+        }
+        this.whitePieces = other.whitePieces;
+        this.blackPieces = other.blackPieces;
+        this.maximizingTurnNow = other.maximizingTurnNow;
+    }
+
+    private void initializeBoard() {
+        for (int i = 0; i < 7; i++) {
+            Arrays.fill(board[i], " ");
+        }
+        int[][] positions = {
+                {0, 0}, {0, 3}, {0, 6},
+                {1, 1}, {1, 3}, {1, 5},
+                {2, 2}, {2, 3}, {2, 4},
+                {3, 0}, {3, 1}, {3, 2}, {3, 4}, {3, 5}, {3, 6},
+                {4, 2}, {4, 3}, {4, 4},
+                {5, 1}, {5, 3}, {5, 5},
+                {6, 0}, {6, 3}, {6, 6}
+        };
+        for (int[] pos : positions) {
+            board[pos[0]][pos[1]] = "X";
+        }
+    }
+
+    public void displayBoard() {
+        System.out.println("Текущая фаза: " + phase);
+        System.out.println("7 " + (board[0][0].equals("X") ? " " : board[0][0]) + "-----------" + (board[0][3].equals("X") ? " " : board[0][3]) + "-----------" + (board[0][6].equals("X") ? " " : board[0][6]));
+        System.out.println("  |           |           |");
+        System.out.println("6 |   " + (board[1][1].equals("X") ? " " : board[1][1]) + "-------" + (board[1][3].equals("X") ? " " : board[1][3]) + "-------" + (board[1][5].equals("X") ? " " : board[1][5]) + "   |");
+        System.out.println("  |   |       |       |   |");
+        System.out.println("5 |   |   " + (board[2][2].equals("X") ? " " : board[2][2]) + "---" + (board[2][3].equals("X") ? " " : board[2][3]) + "---" + (board[2][4].equals("X") ? " " : board[2][4]) + "   |   |");
+        System.out.println("  |   |       |       |   |");
+        System.out.println("4 " + (board[3][0].equals("X") ? " " : board[3][0]) + "---" + (board[3][1].equals("X") ? " " : board[3][1]) + "---" + (board[3][2].equals("X") ? " " : board[3][2]) + "       " + (board[3][4].equals("X") ? " " : board[3][4]) + "---" + (board[3][5].equals("X") ? " " : board[3][5]) + "---" + (board[3][6].equals("X") ? " " : board[3][6]));
+        System.out.println("  |   |       |       |   |");
+        System.out.println("3 |   |   " + (board[4][2].equals("X") ? " " : board[4][2]) + "---" + (board[4][3].equals("X") ? " " : board[4][3]) + "---" + (board[4][4].equals("X") ? " " : board[4][4]) + "   |   |");
+        System.out.println("  |   |       |       |   |");
+        System.out.println("2 |   " + (board[5][1].equals("X") ? " " : board[5][1]) + "-------" + (board[5][3].equals("X") ? " " : board[5][3]) + "-------" + (board[5][5].equals("X") ? " " : board[5][5]) + "   |");
+        System.out.println("  |           |           |");
+        System.out.println("1 " + (board[6][0].equals("X") ? " " : board[6][0]) + "-----------" + (board[6][3].equals("X") ? " " : board[6][3]) + "-----------" + (board[6][6].equals("X") ? " " : board[6][6]));
+        System.out.println("  a   b   c   d   e   f   g");
+    }
+
+    public boolean czyMlynek(int x, int y) {
+        String color = board[x][y];
+        if (color.equals(" ") || color.equals("X")) return false;
+
+        // Список всех горизонтальных и вертикальных мельниц
+        int[][][] mills = {
+                // Горизонтальные линии
+                {{0, 0}, {0, 3}, {0, 6}},
+                {{1, 1}, {1, 3}, {1, 5}},
+                {{2, 2}, {2, 3}, {2, 4}},
+                {{3, 0}, {3, 1}, {3, 2}},
+                {{3, 4}, {3, 5}, {3, 6}},
+                {{4, 2}, {4, 3}, {4, 4}},
+                {{5, 1}, {5, 3}, {5, 5}},
+                {{6, 0}, {6, 3}, {6, 6}},
+
+                // Вертикальные линии
+                {{0, 0}, {3, 0}, {6, 0}},
+                {{1, 1}, {3, 1}, {5, 1}},
+                {{2, 2}, {3, 2}, {4, 2}},
+                {{0, 3}, {1, 3}, {2, 3}},
+                {{4, 3}, {5, 3}, {6, 3}},
+                {{2, 4}, {3, 4}, {4, 4}},
+                {{1, 5}, {3, 5}, {5, 5}},
+                {{0, 6}, {3, 6}, {6, 6}}
+        };
+
+        // Проверяем, входит ли (x, y) в мельницу
+        for (int[][] mill : mills) {
+            boolean inMill = false;
+            for (int[] pos : mill) {
+                if (pos[0] == x && pos[1] == y) {
+                    inMill = true;
+                    break;
+                }
+            }
+
+            // Если (x, y) принадлежит мельнице, проверяем, все ли фишки одинакового цвета
+            if (inMill) {
+                boolean allMatch = true;
+                for (int[] pos : mill) {
+                    if (!board[pos[0]][pos[1]].equals(color)) {
+                        allMatch = false;
+                        break;
+                    }
+                }
+                if (allMatch) return true;
+            }
+        }
+
+        return false;
+    }
+
+    public boolean removePiece(int x, int y) {
+        if (x < 0 || x >= board.length || y < 0 || y >= board[0].length) {
+            System.out.println("Координаты вне доски!");
+            return false;
+        }
+        if (!board[x][y].equals("W") && !board[x][y].equals("B")) {
+            System.out.println("Невозможно удалить эту фишку!");
+            return false;
+        }
+        if (maximizingTurnNow && board[x][y].equals("B")) {
+            board[x][y] = "X";
+            blackPieces--;
+            return true;
+        } else if (!maximizingTurnNow && board[x][y].equals("W")) {
+            board[x][y] = "X";
+            whitePieces--;
+            return true;
+        } else {
+            System.out.println("Неверная фишка для удаления!");
+            return false;
+        }
+    }
+
+    @Override
+    protected Position clone() {
+        try {
+            Position cloned = (Position) super.clone(); // Вызов метода клонирования родителя
+            cloned.board = new String[board.length][board[0].length];
+            for (int i = 0; i < board.length; i++) {
+                System.arraycopy(board[i], 0, cloned.board[i], 0, board[i].length);
+            }
+            // Если у вас есть другие изменяемые поля, клонируйте их здесь
+            return cloned;
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(); // Это исключение не должно возникать, так как мы поддерживаем Cloneable
+        }
+    }
+
+    @Override
+    public List<GameState> generateChildren() {
+        List<GameState> children = new ArrayList<>();
+
+        // Проходим по всем клеткам доски и генерируем возможные ходы
+        for (int i = 0; i < board.length; i++) {
+            for (int j = 0; j < board[i].length; j++) {
+                if (maximizingTurnNow) { // Ход белых
+                    if (board[i][j].equals("X")) { // Пустая клетка
+                        Position child = this.clone(); // Клонируем текущую позицию
+                        child.board[i][j] = "W";      // Помещаем белую фишку
+                        child.whitePieces--;
+                        child.maximizingTurnNow = false; // Меняем игрока
+                        children.add(child); // Добавляем в список детей
+                    }
+                } else { // Ход черных
+                    if (board[i][j].equals("X")) { // Пустая клетка
+                        Position child = this.clone(); // Клонируем текущую позицию
+                        child.board[i][j] = "B";      // Помещаем черную фишку
+                        child.blackPieces--;
+                        child.maximizingTurnNow = true; // Меняем игрока
+                        children.add(child); // Добавляем в список детей
+                    }
+                }
+            }
+        }
+
+        return children;
+    }
+
+
+    public List<Position> generateFirstPhase() {
+        System.out.println("Генерация ходов для первой фазы...");
+        List<Position> children = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 7; j++) {
+                if (board[i][j].equals("X")) {
+                    System.out.println("Найдено свободное поле: (" + i + ", " + j + ")");
+                    Position child = new Position(this);
+                    child.board[i][j] = maximizingTurnNow ? "W" : "B";
+                    if (maximizingTurnNow) child.whitePieces--;
+                    else child.blackPieces--;
+                    child.maximizingTurnNow = !child.maximizingTurnNow;
+                    children.add(child);
+                }
+            }
+        }
+        System.out.println("Сгенерировано " + children.size() + " детей для первой фазы.");
+        return children;
+    }
+
+    public List<Position> generateMovesSecondPhase() {
+        List<Position> children = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 7; j++) {
+                if (board[i][j].equals(maximizingTurnNow ? "W" : "B")) {
+                    // Проверяем соседние поля
+                    for (int[] move : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                        int newX = i + move[0];
+                        int newY = j + move[1];
+                        if (isValidMove(newX, newY)) {
+                            Position child = new Position(this);
+                            child.board[i][j] = "X";
+                            child.board[newX][newY] = maximizingTurnNow ? "W" : "B";
+                            child.maximizingTurnNow = !maximizingTurnNow;
+                            children.add(child);
+                        }
+                    }
+                }
+            }
+        }
+        return children;
+    }
+
+    public boolean isValidMove(int x, int y) {
+        return getBoard()[x][y].equals("X");
+    }
+
+    public void makeMove(int x, int y, String player) {
+        getBoard()[x][y] = player;
+        if (player.equals("W")) {
+            setWhitePieces(getWhitePieces() - 1);
+        } else {
+            setBlackPieces(getBlackPieces() - 1);
+        }
+    }
+    @Override
+    public boolean isWinTerminal() {
+        return whitePieces < 3 || blackPieces < 3;
+    }
+    @Override
+    public int evaluate() {
+        return whitePieces - blackPieces;
+    }
+
+    // Геттеры и сеттеры
+    public String[][] getBoard() {
+        return board;
+    }
+
+    public int getWhitePieces() {
+        return whitePieces;
+    }
+
+    public void setWhitePieces(int whitePieces) {
+        this.whitePieces = whitePieces;
+    }
+
+    public int getBlackPieces() {
+        return blackPieces;
+    }
+
+    public void setBlackPieces(int blackPieces) {
+        this.blackPieces = blackPieces;
+    }
+
+    public boolean isMaximizingTurnNow() {
+        return maximizingTurnNow;
+    }
+
+    public void setMaximizingTurnNow(boolean maximizingTurnNow) {
+        this.maximizingTurnNow = maximizingTurnNow;
+    }
+    public int getPhase() {
+        return phase;
+    }
+
+    public List<Position> generateMoves() {
+        List<Position> children = new ArrayList<>();
+
+        if (phase == 0) { // Фаза расстановки
+            for (int i = 0; i < 7; i++) {
+                for (int j = 0; j < 7; j++) {
+                    if (board[i][j].equals("X")) {
+                        Position child = new Position(this);
+                        child.board[i][j] = maximizingTurnNow ? "W" : "B";
+                        child.maximizingTurnNow = !maximizingTurnNow;
+                        children.add(child);
+                    }
+                }
+            }
+        } else if (phase == 1) { // Фаза перемещения
+            for (int i = 0; i < 7; i++) {
+                for (int j = 0; j < 7; j++) {
+                    if (board[i][j].equals(maximizingTurnNow ? "W" : "B")) {
+                        for (int[] move : new int[][]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                            int newX = i + move[0];
+                            int newY = j + move[1];
+                            if (isValidMove(newX, newY)) {
+                                Position child = new Position(this);
+                                child.board[i][j] = "X";
+                                child.board[newX][newY] = maximizingTurnNow ? "W" : "B";
+                                child.maximizingTurnNow = !maximizingTurnNow;
+                                children.add(child);
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (phase == 2) { // Фаза прыжков
+            for (int i = 0; i < 7; i++) {
+                for (int j = 0; j < 7; j++) {
+                    if (board[i][j].equals(maximizingTurnNow ? "W" : "B")) {
+                        for (int x = 0; x < 7; x++) {
+                            for (int y = 0; y < 7; y++) {
+                                if (board[x][y].equals("X")) {
+                                    Position child = new Position(this);
+                                    child.board[i][j] = "X";
+                                    child.board[x][y] = maximizingTurnNow ? "W" : "B";
+                                    child.maximizingTurnNow = !maximizingTurnNow;
+                                    children.add(child);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return children;
+    }
+
+    public void updatePhase() {
+        if (whitePieces > 0 || blackPieces > 0) {
+            phase = 1; // Фаза расстановки
+        } else if (getCountOnBoard("W") == 3 || getCountOnBoard("B") == 3) {
+            phase = 3; // Фаза прыжков
+        } else {
+            phase = 2; // Фаза перемещения
+        }
+        System.out.println("Фаза обновлена: " + phase);
+    }
+
+    private int getCountOnBoard(String piece) {
+        int count = 0;
+        for (String[] row : board) {
+            for (String cell : row) {
+                if (cell.equals(piece)) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+}
+
+class MiniMax {
+
+    private int minimax(Position position, int depth, boolean isMaximizing) {
+        if (depth == 0 || position.isWinTerminal()) {
+            return position.evaluate();
+        }
+
+        int bestValue = isMaximizing ? Integer.MIN_VALUE : Integer.MAX_VALUE;
+        for (Position child : position.generateMoves()) {
+            int value = minimax(child, depth - 1, !isMaximizing);
+            bestValue = isMaximizing ? Math.max(bestValue, value) : Math.min(bestValue, value);
+        }
+        return bestValue;
+    }
+
+}
+
+public class Main {
+    public static void expand(Position position, int maxDepth) {
+        long[] stateCounts = new long[maxDepth];
+        expand(position, stateCounts, 0);
+
+        System.out.println("Глубина дерева и количество состояний:");
+        for (int i = 0; i < stateCounts.length; i++) {
+            System.out.println((i + 1) + " " + stateCounts[i]);
+        }
+    }
+
+    private static void expand(Position position, long[] stateCounts, int currentDepth) {
+        if (currentDepth >= stateCounts.length) {
+            return;
+        }
+        for (Position child : position.generateChildren()) {
+            stateCounts[currentDepth]++;
+            expand(child, stateCounts, currentDepth + 1);
+        }
+    }
+
+    public static void main(String[] args) {
+        Position game = new Position();
+        Scanner scanner = new Scanner(System.in);
+        Position initialState = new Position();
+        int depth = 6;
+
+        expand(game, depth);
+        System.out.println("Начинаем игру 'Девять Мельниц'!");
+        System.out.println("Для ввода координат используйте формат: строка (число) и столбец (число). Например: 2 3.\n");
+
+        while (!game.isWinTerminal()) {
+            game.displayBoard();
+            System.out.println("Текущая фаза: " + game.getPhase());
+
+            if (game.isMaximizingTurnNow()) {
+                System.out.println("Ход белых! Введите координаты (например, 2 3): ");
+                if (scanner.hasNextInt()) {
+                    int x = scanner.nextInt() - 1;
+                    int y = scanner.nextInt() - 1;
+
+                    if (game.isValidMove(x, y)) {
+                        game.makeMove(x, y, "W");
+                        game.displayBoard();
+
+                        System.out.println("\nАнализ дерева состояний после хода белых:");
+                        expand(game, depth);
+
+                        if (game.czyMlynek(x, y)) {
+                            System.out.println("Белые построили млинек! Введите координаты фишки соперника для удаления:");
+                            while (true) {
+                                int removeX = scanner.nextInt() - 1;
+                                int removeY = scanner.nextInt() - 1;
+                                if (game.removePiece(removeX, removeY)) {
+                                    game.displayBoard();
+                                    break;
+                                }
+                                System.out.println("Некорректные координаты. Попробуйте снова.");
+                            }
+                        }
+                        game.updatePhase();
+                        game.setMaximizingTurnNow(false);
+                    } else {
+                        System.out.println("Неверный ход. Попробуйте снова.");
+                    }
+                } else {
+                    System.out.println("Некорректный ввод. Попробуйте снова.");
+                    scanner.next();
+                }
+            } else {
+                System.out.println("Ход черных (ИИ).");
+
+                // Применяем AlphaBetaPruning для поиска лучшего хода
+                AlphaBetaPruning algorithm = new AlphaBetaPruning(game);
+                algorithm.getConfigurator().setDepthLimit(depth); // Устанавливаем глубину
+                algorithm.execute(); // Выполняем поиск
+
+                Position bestMove = (Position) algorithm.getFirstResult(); // Получаем лучший ход
+                if (bestMove != null) {
+                    game = bestMove; // Применяем лучший ход
+                    game.displayBoard();
+
+                    if (game.isWinTerminal()) {
+                        break;
+                    }
+
+                    if (game.czyMlynek(-1, -1)) {
+                        System.out.println("ИИ построил млинек! Удаляем фишку белых.");
+                        // Добавьте логику удаления фишки белых
+                    }
+                    game.setMaximizingTurnNow(true); // Передаем ход белым
+                } else {
+                    System.out.println("ИИ не нашел возможных ходов!");
+                    break;
+                }
+            }
+        }
+
+        System.out.println("Игра окончена!");
+        if (game.getWhitePieces() < 3) {
+            System.out.println("Победили черные!");
+        } else {
+            System.out.println("Победили белые!");
+        }
+    }
+}
