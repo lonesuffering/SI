@@ -102,3 +102,17 @@ plt.ylabel('$x_2$')
 plt.title('Wykres warstwicowy sumy ważonej')
 plt.grid()
 plt.show()
+
+Wpływ współczynnika uczenia na liczbę iteracji:
+Współczynnik uczenia: 0.001, Liczba iteracji: 1000
+Współczynnik uczenia: 0.010, Liczba iteracji: 480
+Współczynnik uczenia: 0.100, Liczba iteracji: 60
+Współczynnik uczenia: 0.500, Liczba iteracji: 20
+
+Wpływ marginesu między klasami na liczbę iteracji:
+Margines: 0.10, Liczba iteracji: 200
+Margines: 0.30, Liczba iteracji: 150
+Margines: 0.50, Liczba iteracji: 80
+Margines: 0.70, Liczba iteracji: 40
+Margines: 0.90, Liczba iteracji: 20
+
