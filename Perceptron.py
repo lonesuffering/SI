@@ -1,153 +1,104 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
+# 1. Создание исходного набора данных
+num_points = 1000
+x1 = np.random.uniform(0, 2 * np.pi, num_points)
+x2 = np.random.uniform(-1, 1, num_points)
+X = np.column_stack((np.ones(num_points), x1, x2))
 
-# Step 1: Generate a linearly separable dataset
-def generate_linear_data(n_samples=100, margin=0.1):
-    np.random.seed(0)
-    X = np.random.uniform(-1, 1, (n_samples, 2))
-    y = np.sign(X[:, 0] - X[:, 1] + margin)
-    return X, y
+y = np.where(np.abs(np.sin(x1)) > np.abs(x2), -1, 1)
 
+# Визуализация исходного набора данных
+plt.figure(figsize=(8, 6))
+plt.scatter(x1[y == -1], x2[y == -1], edgecolor='green', facecolor='none', marker='o', s=10, label='Class -1')
+plt.scatter(x1[y == 1], x2[y == 1], edgecolor='blue', facecolor='none', marker='o', s=10, label='Class 1')
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.title('Исходный набор данных')
+plt.legend()
+plt.grid()
+plt.show()
 
-# Step 2: Implement the simple perceptron class
-class SimplePerceptron:
-    def __init__(self, learning_rate=0.01, max_iter=1000):
-        self.learning_rate = learning_rate
-        self.max_iter = max_iter
-        self.weights = None
-        self.steps = 0
+# 2. Нормализация данных
+x1_normalized = (x1 - x1.min()) / (x1.max() - x1.min()) * 2 - 1
+x2_normalized = x2  # x2 уже в диапазоне [-1, 1]
+X_normalized = np.column_stack((np.ones(num_points), x1_normalized, x2_normalized))
 
-    def fit(self, X, y):
-        X = np.c_[np.ones(X.shape[0]), X]  # Add bias term
-        self.weights = np.zeros(X.shape[1])
+# 3. Поднятие размерности пространства (Пространство признаков)
+num_centers = 100
+centers = np.random.uniform(-1, 1, (num_centers, 2))  # Случайное расположение центров
+sigma = 0.3  # Параметр ядра Гаусса
 
-        for _ in range(self.max_iter):
-            self.steps += 1
-            errors = 0
-            for xi, yi in zip(X, y):
-                if yi * np.dot(self.weights, xi) <= 0:
-                    self.weights += self.learning_rate * yi * xi
-                    errors += 1
-            if errors == 0:
-                break
+# Преобразование данных в пространство признаков
+Z = np.zeros((num_points, num_centers))
+for i in range(num_points):
+    for j in range(num_centers):
+        distance_squared = (x1_normalized[i] - centers[j, 0])**2 + (x2_normalized[i] - centers[j, 1])**2
+        Z[i, j] = np.exp(-distance_squared / (2 * sigma**2))
 
-    def predict(self, X):
-        X = np.c_[np.ones(X.shape[0]), X]  # Add bias term
-        return np.sign(np.dot(X, self.weights))
+# Добавление bias в матрицу Z
+Z = np.column_stack((np.ones(num_points), Z))
 
-    def decision_function(self, X):
-        X = np.c_[np.ones(X.shape[0]), X]  # Add bias term
-        return np.dot(X, self.weights)
+# 4. Реализация алгоритма перцептрона
+weights = np.zeros(Z.shape[1])
+max_iterations = 1000
+learning_rate = 0.01
 
+for iteration in range(max_iterations):
+    errors = 0
+    for i in range(num_points):
+        prediction = np.sign(np.dot(weights, Z[i]))
+        if prediction != y[i]:
+            weights += learning_rate * y[i] * Z[i]
+            errors += 1
+    if errors == 0:
+        break
 
-# Step 3: Visualize the dataset and decision boundary
-def plot_decision_boundary(perceptron, X, y):
-    x_min, x_max = X[:, 0].min() - 0.1, X[:, 0].max() + 0.1
-    y_min, y_max = X[:, 1].min() - 0.1, X[:, 1].max() + 0.1
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
-    grid = np.c_[xx.ravel(), yy.ravel()]
-    Z = perceptron.predict(grid).reshape(xx.shape)
+# 5. Визуализация результатов
+x1_mesh, x2_mesh = np.meshgrid(np.linspace(-1, 1, 200), np.linspace(-1, 1, 200))
+x1_flat, x2_flat = x1_mesh.ravel(), x2_mesh.ravel()
 
-    plt.contourf(xx, yy, Z, alpha=0.8, levels=[-1, 0, 1], cmap='coolwarm')
-    plt.scatter(X[:, 0], X[:, 1], c=y, cmap='coolwarm', edgecolors='k')
-    plt.title('Decision Boundary')
-    plt.show()
+Z_mesh = np.zeros((len(x1_flat), num_centers))
+for i in range(len(x1_flat)):
+    for j in range(num_centers):
+        distance_squared = (x1_flat[i] - centers[j, 0])**2 + (x2_flat[i] - centers[j, 1])**2
+        Z_mesh[i, j] = np.exp(-distance_squared / (2 * sigma**2))
 
+Z_mesh = np.column_stack((np.ones(len(x1_flat)), Z_mesh))
+predictions = np.sign(Z_mesh.dot(weights)).reshape(x1_mesh.shape)
 
-# Step 4: Test the perceptron
-X, y = generate_linear_data(n_samples=100, margin=0.2)
-perceptron = SimplePerceptron(learning_rate=0.1, max_iter=1000)
-perceptron.fit(X, y)
-plot_decision_boundary(perceptron, X, y)
+plt.figure(figsize=(8, 6))
+plt.contourf(x1_mesh, x2_mesh, predictions, levels=[-1, 0, 1], colors=['red', 'yellow'], alpha=0.5)
+plt.scatter(x1_normalized[y == -1], x2_normalized[y == -1], edgecolor='green', facecolor='none', marker='o', s=10, label='Class -1')
+plt.scatter(x1_normalized[y == 1], x2_normalized[y == 1], edgecolor='blue', facecolor='none', marker='o', s=10, label='Class 1')
+plt.scatter(centers[:, 0], centers[:, 1], c='black', s=50, label='Centers')  # Добавление центров
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.title('Результаты классификации')
+plt.legend()
+plt.grid()
+plt.show()
 
+# 6. Визуализация весовой суммы в 3D
+weighted_sum = Z_mesh.dot(weights).reshape(x1_mesh.shape)
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.plot_surface(x1_mesh, x2_mesh, weighted_sum, cmap='coolwarm', edgecolor='none', alpha=0.8)
+ax.set_xlabel('$x_1$')
+ax.set_ylabel('$x_2$')
+ax.set_zlabel('Weighted sum')
+ax.set_title('Весовая сумма (3D визуализация)')
+plt.show()
 
-# Step 5: Non-linear perceptron (homework task)
-def generate_nonlinear_data(n_samples=100):
-    np.random.seed(1)
-    X = np.random.uniform([0, -1], [2 * np.pi, 1], (n_samples, 2))
-    y = np.where(np.abs(np.sin(X[:, 0])) > np.abs(X[:, 1]), -1, 1)
-    return X, y
-
-
-def gaussian_kernel(X, centers, sigma):
-    Z = np.exp(-np.sum((X[:, None, :] - centers[None, :, :]) ** 2, axis=2) / (2 * sigma ** 2))
-    return Z
-
-
-class NonLinearPerceptron:
-    def __init__(self, learning_rate=0.01, max_iter=5000, n_centers=300, sigma=0.2):
-        self.learning_rate = learning_rate
-        self.max_iter = max_iter
-        self.n_centers = n_centers
-        self.sigma = sigma
-        self.weights = None
-        self.steps = 0
-
-    def fit(self, X, y):
-        self.centers = np.random.uniform(-1, 1, (self.n_centers, X.shape[1]))
-        Z = gaussian_kernel(X, self.centers, self.sigma)
-        Z = np.c_[np.ones(Z.shape[0]), Z]  # Add bias term
-        self.weights = np.zeros(Z.shape[1])
-
-        for _ in range(self.max_iter):
-            self.steps += 1
-            errors = 0
-            for zi, yi in zip(Z, y):
-                if yi * np.dot(self.weights, zi) <= 0:
-                    self.weights += self.learning_rate * yi * zi
-                    errors += 1
-            if errors == 0:
-                break
-
-    def predict(self, X):
-        Z = gaussian_kernel(X, self.centers, self.sigma)
-        Z = np.c_[np.ones(Z.shape[0]), Z]  # Add bias term
-        return np.sign(np.dot(Z, self.weights))
-
-
-# Step 6: Evaluate and visualize results
-def evaluate_model(perceptron, X, y):
-    y_pred = perceptron.predict(X)
-    accuracy = np.mean(y_pred == y)
-    print(f"Accuracy: {accuracy * 100:.2f}%")
-
-    # Highlight misclassified points
-    misclassified = X[y != y_pred]
-    plt.scatter(X[:, 0], X[:, 1], c=y, cmap='coolwarm', edgecolors='k')
-    plt.scatter(misclassified[:, 0], misclassified[:, 1], facecolors='none', edgecolors='yellow', s=100,
-                label='Misclassified')
-    plt.legend()
-    plt.title('Misclassified Points')
-    plt.show()
-
-
-# Step 7: Hyperparameter tuning
-def tune_hyperparameters():
-    accuracies = []
-    sigmas = np.linspace(0.1, 0.3, 2)  # Zmniejszona liczba sigm
-    centers_range = [100]  # Mniejsza liczba centrów
-
-    for sigma in sigmas:
-        for n_centers in centers_range:
-            nonlinear_perceptron = NonLinearPerceptron(learning_rate=0.1, max_iter=500,  # Zmniejszone max_iter
-                                                       n_centers=n_centers, sigma=sigma)
-            nonlinear_perceptron.fit(X[:200], y[:200])  # Użycie próbki danych
-            y_pred = nonlinear_perceptron.predict(X[200:])
-            accuracy = np.mean(y_pred == y[200:])
-            accuracies.append((sigma, n_centers, accuracy))
-
-    best_params = max(accuracies, key=lambda x: x[2])
-    print(f"Best parameters: sigma={best_params[0]}, n_centers={best_params[1]}, accuracy={best_params[2] * 100:.2f}%")
-
-
-
-
-X, y = generate_nonlinear_data(n_samples=500)
-nonlinear_perceptron = NonLinearPerceptron(learning_rate=0.1, max_iter=5000, n_centers=300, sigma=0.2)
-nonlinear_perceptron.fit(X, y)
-plot_decision_boundary(nonlinear_perceptron, X, y)
-evaluate_model(nonlinear_perceptron, X, y)
-
-# Optional: Uncomment to tune hyperparameters
-tune_hyperparameters()
+# 7. Визуализация контурного графика весовой суммы
+plt.figure(figsize=(8, 6))
+contour_levels = np.linspace(weighted_sum.min(), weighted_sum.max(), 50)  # Увеличение числа варствиц
+plt.contour(x1_mesh, x2_mesh, weighted_sum, levels=contour_levels, cmap='coolwarm')
+plt.colorbar(label='Weighted sum')
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.title('Контурный график весовой суммы')
+plt.grid()
+plt.show()
