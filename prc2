@@ -1,0 +1,118 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+# 1. Tworzenie początkowego zbioru danych z liniowym marginesem
+n = 1000  # liczba punktów
+data = np.random.rand(n, 2) * 2 - 1  # Punkty w zakresie [-1, 1]
+
+# Wybór punktów poniżej osi x
+idx = data[:, 0] < 0
+
+# Przesunięcie punktów względem marginesu
+data[idx, 0] = data[idx, 0] / 2 - 0.5
+data[~idx, 0] = data[~idx, 0] / 2 + 0.5
+
+# Obrót punktów w przestrzeni o losowy kąt
+alpha = np.random.uniform(0, 2 * np.pi)
+data = data @ np.array([[np.cos(alpha), -np.sin(alpha)], [np.sin(alpha), np.cos(alpha)]])
+
+# Dodanie losowego szumu
+noise = np.random.normal(0, 0.05, size=data.shape)
+data += noise
+
+# Tworzenie etykiet
+labels = np.where(data[:, 0] > 0, 1, -1)
+
+# Wizualizacja zbioru danych
+plt.figure(figsize=(8, 6))
+plt.scatter(data[labels == -1, 0], data[labels == -1, 1], edgecolor='green', facecolor='none', marker='o', s=10, label='Klasa -1')
+plt.scatter(data[labels == 1, 0], data[labels == 1, 1], edgecolor='blue', facecolor='none', marker='o', s=10, label='Klasa 1')
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.title('Zbiór liniowo separowalny z marginesem')
+plt.legend()
+plt.grid()
+plt.show()
+
+# 2. Normalizacja danych
+x1_normalized = (data[:, 0] - data[:, 0].min()) / (data[:, 0].max() - data[:, 0].min()) * 2 - 1
+x2_normalized = (data[:, 1] - data[:, 1].min()) / (data[:, 1].max() - data[:, 1].min()) * 2 - 1
+X_normalized = np.column_stack((np.ones(n), x1_normalized, x2_normalized))
+
+# 3. Podniesienie wymiarowości przestrzeni (Przestrzeń cech)
+num_centers = 100
+centers = np.random.uniform(-1, 1, (num_centers, 2))  # Losowe rozmieszczenie centrów
+sigma = 0.3  # Parametr jądra Gaussa
+
+# Przekształcenie danych do przestrzeni cech
+Z = np.zeros((n, num_centers))
+for i in range(n):
+    for j in range(num_centers):
+        distance_squared = (x1_normalized[i] - centers[j, 0])**2 + (x2_normalized[i] - centers[j, 1])**2
+        Z[i, j] = np.exp(-distance_squared / (2 * sigma**2))
+
+# Dodanie bias do macierzy Z
+Z = np.column_stack((np.ones(n), Z))
+
+# 4. Implementacja algorytmu perceptronu
+weights = np.zeros(Z.shape[1])
+max_iterations = 1000
+learning_rate = 0.01
+
+for iteration in range(max_iterations):
+    errors = 0
+    for i in range(n):
+        prediction = np.sign(np.dot(weights, Z[i]))
+        if prediction != labels[i]:
+            weights += learning_rate * labels[i] * Z[i]
+            errors += 1
+    if errors == 0:
+        break
+
+# 5. Wizualizacja wyników
+x1_mesh, x2_mesh = np.meshgrid(np.linspace(-1, 1, 200), np.linspace(-1, 1, 200))
+x1_flat, x2_flat = x1_mesh.ravel(), x2_mesh.ravel()
+
+Z_mesh = np.zeros((len(x1_flat), num_centers))
+for i in range(len(x1_flat)):
+    for j in range(num_centers):
+        distance_squared = (x1_flat[i] - centers[j, 0])**2 + (x2_flat[i] - centers[j, 1])**2
+        Z_mesh[i, j] = np.exp(-distance_squared / (2 * sigma**2))
+
+Z_mesh = np.column_stack((np.ones(len(x1_flat)), Z_mesh))
+predictions = np.sign(Z_mesh.dot(weights)).reshape(x1_mesh.shape)
+
+plt.figure(figsize=(8, 6))
+plt.contourf(x1_mesh, x2_mesh, predictions, levels=[-1, 0, 1], colors=['red', 'yellow'], alpha=0.5)
+plt.scatter(x1_normalized[labels == -1], x2_normalized[labels == -1], edgecolor='green', facecolor='none', marker='o', s=10, label='Klasa -1')
+plt.scatter(x1_normalized[labels == 1], x2_normalized[labels == 1], edgecolor='blue', facecolor='none', marker='o', s=10, label='Klasa 1')
+plt.scatter(centers[:, 0], centers[:, 1], c='black', s=50, label='Centra')  # Dodanie centrów
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.title('Wyniki klasyfikacji')
+plt.legend()
+plt.grid()
+plt.show()
+
+# 6. Wizualizacja sumy ważonej w 3D
+weighted_sum = Z_mesh.dot(weights).reshape(x1_mesh.shape)
+fig = plt.figure(figsize=(10, 8))
+ax = fig.add_subplot(111, projection='3d')
+ax.plot_surface(x1_mesh, x2_mesh, weighted_sum, cmap='coolwarm', edgecolor='none', alpha=0.8)
+ax.set_xlabel('$x_1$')
+ax.set_ylabel('$x_2$')
+ax.set_zlabel('Suma ważona')
+ax.set_title('Suma ważona (wizualizacja 3D)')
+plt.show()
+
+# 7. Wizualizacja wykresu warstwicowego sumy ważonej
+plt.figure(figsize=(8, 6))
+contour_levels = np.linspace(weighted_sum.min(), weighted_sum.max(), 50)  # Większa liczba warstwic
+plt.contour(x1_mesh, x2_mesh, weighted_sum, levels=contour_levels, cmap='coolwarm')
+plt.colorbar(label='Suma ważona')
+plt.xlabel('$x_1$')
+plt.ylabel('$x_2$')
+plt.title('Wykres warstwicowy sumy ważonej')
+plt.grid()
+plt.show()
