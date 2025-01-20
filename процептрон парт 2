@@ -1,0 +1,395 @@
+import numpy as np
+from sklearn.base import BaseEstimator, RegressorMixin
+import time
+import copy
+import matplotlib.pyplot as plt
+import pickle
+import matplotlib
+matplotlib.use('TkAgg')
+class MLPApproximator(BaseEstimator, RegressorMixin):
+    ALGO_NAMES = ["sgd_simple", "sgd_momentum", "rmsprop", "adam"]
+
+    def __init__(self, structure, input_dim, activation_name="relu", targets_activation_name="linear",
+                 initialization_name="uniform", algo_name="sgd_simple", learning_rate=1e-2,
+                 n_epochs=100, batch_size=10, seed=0, verbosity_e=100, verbosity_b=10):
+        self.structure = structure
+        self.input_dim = input_dim
+        self.activation_name = activation_name
+        self.targets_activation_name = targets_activation_name
+        self.initialization_name = initialization_name
+        self.algo_name = algo_name
+        if self.algo_name not in self.ALGO_NAMES:
+            self.algo_name = self.ALGO_NAMES[0]
+        self.loss_name = "squared_loss"
+        self.learning_rate = learning_rate
+        self.n_epochs = n_epochs
+        self.batch_size = batch_size
+        self.seed = seed
+        self.verbosity_e = verbosity_e
+        self.verbosity_b = verbosity_b
+
+        # Инициализация весов
+        self._initialize_weights()
+
+        # Инициализация для алгоритмов
+        if self.algo_name == "adam":
+            self.pre_algo_adam()
+        elif self.algo_name == "sgd_momentum":
+            self.pre_algo_momentum()
+        elif self.algo_name == "rmsprop":
+            self.pre_algo_rmsprop()
+
+    def pre_algo_momentum(self):
+        """Initialize momentum terms."""
+        self.momentum_w = [np.zeros_like(w) for w in self.weights]
+        self.momentum_b = [np.zeros_like(b) for b in self.biases]
+        self.momentum_beta = 0.9  # Momentum factor
+
+    def algo_momentum(self, gradients_w, gradients_b):
+        """Update weights and biases using Momentum."""
+        for i in range(len(self.weights)):
+            self.momentum_w[i] = self.momentum_beta * self.momentum_w[i] + self.learning_rate * gradients_w[i]
+            self.momentum_b[i] = self.momentum_beta * self.momentum_b[i] + self.learning_rate * gradients_b[i]
+            self.weights[i] -= self.momentum_w[i]
+            self.biases[i] -= self.momentum_b[i]
+
+    def pre_algo_rmsprop(self):
+        """Initialize RMSProp terms."""
+        self.rmsprop_w = [np.zeros_like(w) for w in self.weights]
+        self.rmsprop_b = [np.zeros_like(b) for b in self.biases]
+        self.rmsprop_beta = 0.9  # Decay rate
+        self.rmsprop_epsilon = 1e-8
+
+    def algo_rmsprop(self, gradients_w, gradients_b):
+        """Update weights and biases using RMSProp."""
+        for i in range(len(self.weights)):
+            self.rmsprop_w[i] = self.rmsprop_beta * self.rmsprop_w[i] + (1 - self.rmsprop_beta) * (gradients_w[i] ** 2)
+            self.rmsprop_b[i] = self.rmsprop_beta * self.rmsprop_b[i] + (1 - self.rmsprop_beta) * (gradients_b[i] ** 2)
+            self.weights[i] -= self.learning_rate * gradients_w[i] / (np.sqrt(self.rmsprop_w[i]) + self.rmsprop_epsilon)
+            self.biases[i] -= self.learning_rate * gradients_b[i] / (np.sqrt(self.rmsprop_b[i]) + self.rmsprop_epsilon)
+
+    def pre_algo_adam(self):
+        """Initialize Adam terms."""
+        self.m_w = [np.zeros_like(w) for w in self.weights]
+        self.v_w = [np.zeros_like(w) for w in self.weights]
+        self.m_b = [np.zeros_like(b) for b in self.biases]
+        self.v_b = [np.zeros_like(b) for b in self.biases]
+        self.t = 1  # Initialize timestep
+        self.beta1, self.beta2 = 0.9, 0.999
+        self.epsilon = 1e-8
+
+    def algo_adam(self, gradients_w, gradients_b):
+        """Update weights and biases using Adam."""
+        for i in range(len(self.weights)):
+            # Update biased first moment estimate
+            self.m_w[i] = self.beta1 * self.m_w[i] + (1 - self.beta1) * gradients_w[i]
+            self.m_b[i] = self.beta1 * self.m_b[i] + (1 - self.beta1) * gradients_b[i]
+
+            # Update biased second raw moment estimate
+            self.v_w[i] = self.beta2 * self.v_w[i] + (1 - self.beta2) * (gradients_w[i] ** 2)
+            self.v_b[i] = self.beta2 * self.v_b[i] + (1 - self.beta2) * (gradients_b[i] ** 2)
+
+            # Compute bias-corrected first moment estimate
+            m_w_hat = self.m_w[i] / (1 - self.beta1 ** self.t)
+            m_b_hat = self.m_b[i] / (1 - self.beta1 ** self.t)
+
+            # Compute bias-corrected second raw moment estimate
+            v_w_hat = self.v_w[i] / (1 - self.beta2 ** self.t)
+            v_b_hat = self.v_b[i] / (1 - self.beta2 ** self.t)
+
+            # Update weights and biases
+            self.weights[i] -= self.learning_rate * m_w_hat / (np.sqrt(v_w_hat) + self.epsilon)
+            self.biases[i] -= self.learning_rate * m_b_hat / (np.sqrt(v_b_hat) + self.epsilon)
+
+        self.t += 1
+
+    def _initialize_weights(self):
+        np.random.seed(self.seed)
+        self.weights = []
+        self.biases = []
+
+        # Используем input_dim
+        layer_structure = [self.input_dim] + self.structure
+
+        for i in range(len(layer_structure) - 1):
+            weight = np.random.randn(layer_structure[i], layer_structure[i + 1]) * np.sqrt(
+                2. / (layer_structure[i] + layer_structure[i + 1]))
+            bias = np.zeros((1, layer_structure[i + 1]))
+            self.weights.append(weight)
+            self.biases.append(bias)
+
+    # Функции активации
+    @staticmethod
+    def relu(x):
+        return np.maximum(0, x)
+
+    @staticmethod
+    def relu_d(x):
+        return np.where(x > 0, 1, 0)
+
+    @staticmethod
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+
+    @staticmethod
+    def sigmoid_d(x):
+        return MLPApproximator.sigmoid(x) * (1 - MLPApproximator.sigmoid(x))
+
+    @staticmethod
+    def linear(x):
+        return x
+
+    @staticmethod
+    def linear_d(x):
+        return 1
+
+    @staticmethod
+    def squared_loss(y_true, y_pred):
+        return 0.5 * np.mean((y_true - y_pred) ** 2)
+
+    @staticmethod
+    def squared_loss_d(y_true, y_pred):
+        return y_pred - y_true
+
+    def forward(self, X):
+        self.activations = [X]
+        self.z_values = []
+
+        for i in range(len(self.weights)):
+            z = np.dot(self.activations[-1], self.weights[i]) + self.biases[i]
+            self.z_values.append(z)
+            if self.activation_name == "relu":
+                activation = self.relu(z)
+            elif self.activation_name == "sigmoid":
+                activation = self.sigmoid(z)
+            else:
+                activation = self.linear(z)
+            self.activations.append(activation)
+
+        return self.activations[-1]
+
+    def backward(self, X, y):
+        m = X.shape[0]
+        gradients_w = [np.zeros_like(w) for w in self.weights]
+        gradients_b = [np.zeros_like(b) for b in self.biases]
+
+        delta = self.squared_loss_d(y, self.activations[-1])
+        for i in reversed(range(len(self.weights))):
+            gradients_w[i] = np.dot(self.activations[i].T, delta) / m
+            gradients_b[i] = np.sum(delta, axis=0, keepdims=True) / m
+            if i > 0:
+                if self.activation_name == "relu":
+                    delta = np.dot(delta, self.weights[i].T) * self.relu_d(self.z_values[i - 1])
+                elif self.activation_name == "sigmoid":
+                    delta = np.dot(delta, self.weights[i].T) * self.sigmoid_d(self.z_values[i - 1])
+                else:
+                    delta = np.dot(delta, self.weights[i].T) * self.linear_d(self.z_values[i - 1])
+
+        return gradients_w, gradients_b
+
+    def algo_sgd_simple(self, gradients_w, gradients_b):
+        for i in range(len(self.weights)):
+            self.weights[i] -= self.learning_rate * gradients_w[i]
+            self.biases[i] -= self.learning_rate * gradients_b[i]
+
+    def fit(self, X, y):
+        print(f"Starting training with {len(X)} samples...")
+        # Initialize pre-requisites for algorithms
+        if self.algo_name == "adam":
+            self.pre_algo_adam()
+        elif self.algo_name == "sgd_momentum":
+            self.pre_algo_momentum()
+        elif self.algo_name == "rmsprop":
+            self.pre_algo_rmsprop()
+
+        self.loss_history = []  # To store loss values
+        self.time_history = []  # To store time per epoch
+
+        start_time = time.time()
+        for epoch in range(self.n_epochs):
+            epoch_loss = 0
+            epoch_start_time = time.time()
+            for batch_start in range(0, X.shape[0], self.batch_size):
+                X_b = X[batch_start:batch_start + self.batch_size]
+                y_b = y[batch_start:batch_start + self.batch_size]
+
+                self.forward(X_b)
+                gradients_w, gradients_b = self.backward(X_b, y_b)
+
+                if self.algo_name == "adam":
+                    self.algo_adam(gradients_w, gradients_b)
+                elif self.algo_name == "sgd_momentum":
+                    self.algo_momentum(gradients_w, gradients_b)
+                elif self.algo_name == "rmsprop":
+                    self.algo_rmsprop(gradients_w, gradients_b)
+                elif self.algo_name == "sgd_simple":
+                    self.algo_sgd_simple(gradients_w, gradients_b)
+
+                batch_loss = self.squared_loss(y_b, self.activations[-1])
+                epoch_loss += batch_loss
+
+            epoch_loss /= (X.shape[0] // self.batch_size)
+            self.loss_history.append(epoch_loss)
+            epoch_end_time = time.time()
+            epoch_time = epoch_end_time - epoch_start_time
+            self.time_history.append(epoch_time)
+
+            if epoch % self.verbosity_e == 0:
+                print(f"Epoch {epoch}/{self.n_epochs}, Loss: {epoch_loss:.4f}")
+
+        end_time = time.time()
+        total_time = end_time - start_time
+        print(f"Training completed in {total_time:.2f} seconds.")
+
+    def predict(self, X):
+        print(f"Making predictions for {len(X)} samples...")
+        return self.forward(X)
+
+def fake_data(n_samples=100, n_features=16, noise=0.1):
+    X = np.random.rand(n_samples, n_features)  # Случайные входы
+    y = np.sum(X, axis=1, keepdims=True) + noise * np.random.randn(n_samples, 1)  # Сумма + шум
+    return X, y
+
+def conduct_experiments():
+    learning_rates = [1e-2, 1e-3, 1e-4]
+    activation_functions = ["sigmoid", "relu"]
+    algorithms = ["sgd_simple", "sgd_momentum", "rmsprop", "adam"]
+    structures = [
+        [128, 64, 32],
+        [128, 128, 64, 64, 32, 32],
+        ([64] * 5 + [32] * 5 + [16] * 5 + [8] * 5)
+    ]
+
+    # Set random seed
+    seed = 123456  # Replace with your student index
+    np.random.seed(seed)
+
+    for structure in structures:
+        for learning_rate in learning_rates:
+            for activation_name in activation_functions:
+                for algo_name in algorithms:
+                    model = MLPApproximator(
+                        structure=structure,
+                        input_dim=16,
+                        activation_name=activation_name,
+                        algo_name=algo_name,
+                        learning_rate=learning_rate,
+                        n_epochs=1000,
+                        batch_size=10,
+                        seed=seed,
+                        verbosity_e=100
+                    )
+                    model.fit(X_train, y_train)
+                    # Save the model
+                    with open(f"model_structure_{'_'.join(map(str, structure))}_lr_{learning_rate}_act_{activation_name}_algo_{algo_name}.pkl", "wb") as f:
+                        pickle.dump(model, f)
+                    # Save the loss history
+                    with open(f"loss_history_structure_{'_'.join(map(str, structure))}_lr_{learning_rate}_act_{activation_name}_algo_{algo_name}.pkl", "wb") as f:
+                        pickle.dump(model.loss_history, f)
+                    # Save the time history
+                    with open(f"time_history_structure_{'_'.join(map(str, structure))}_lr_{learning_rate}_act_{activation_name}_algo_{algo_name}.pkl", "wb") as f:
+                        pickle.dump(model.time_history, f)
+
+def plot_comparative_sgd():
+    structure = [128, 128, 64, 64, 32, 32]
+    learning_rate = 1e-3
+    activation_name = "relu"
+
+    algo_names = ["sgd_simple", "sgd_momentum", "rmsprop", "adam"]
+    loss_histories = {}
+    time_histories = {}
+
+    for algo in algo_names:
+        with open(f"loss_history_structure_{'_'.join(map(str, structure))}_lr_{learning_rate}_act_{activation_name}_algo_{algo}.pkl", "rb") as f:
+            loss_history = pickle.load(f)
+            loss_histories[algo] = loss_history
+        with open(f"time_history_structure_{'_'.join(map(str, structure))}_lr_{learning_rate}_act_{activation_name}_algo_{algo}.pkl", "rb") as f:
+            time_history = pickle.load(f)
+            time_histories[algo] = time_history
+
+    plt.figure(figsize=(10, 6))
+    for algo in algo_names:
+        plt.plot(loss_histories[algo], label=algo)
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Comparative SGD Algorithms")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+    for algo in algo_names:
+        plt.plot(time_histories[algo], label=algo)
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Time (seconds)")
+    plt.title("Training Time per Epoch")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+def plot_train_test_loss():
+    structure = [128, 128, 64, 64, 32, 32]
+    learning_rate = 1e-3
+    activation_name = "relu"
+    algo_name = "adam"
+
+    with open(f"loss_history_structure_{'_'.join(map(str, structure))}_lr_{learning_rate}_act_{activation_name}_algo_{algo_name}.pkl", "rb") as f:
+        loss_history = pickle.load(f)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(loss_history, label="Training Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and Test Loss")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+if __name__ == "__main__":
+    # Generate data
+    X, y = fake_data(n_samples=200, n_features=16)
+    X_train, X_test = X[:150], X[150:]
+    y_train, y_test = y[:150], y[150:]
+
+    # Normalize data
+    X_train = (X_train - X_train.mean(axis=0)) / X_train.std(axis=0)
+    X_test = (X_test - X_test.mean(axis=0)) / X_test.std(axis=0)
+
+    # Define network structure
+    structure = [64, 64, 32, 1]
+    learning_rate = 0.001
+    n_epochs = 3000
+    batch_size = 32
+    activation_name = "relu"
+    algo_name = "adam"  # Change to "sgd_momentum" or "rmsprop" to use different algorithms
+
+    # Create and train model
+    model = MLPApproximator(
+        structure=structure,
+        input_dim=X_train.shape[1],
+        activation_name=activation_name,
+        algo_name=algo_name,
+        learning_rate=learning_rate,
+        n_epochs=n_epochs,
+        batch_size=batch_size,
+        verbosity_e=100
+    )
+
+    model.fit(X_train, y_train)
+
+    # Evaluate model
+    y_pred = model.predict(X_test)
+    loss = model.squared_loss(y_test, y_pred)
+    print(f"Test Loss: {loss:.4f}")
+
+    # Conduct experiments
+    conduct_experiments()
+
+    # Plot comparative SGD algorithms
+    plot_comparative_sgd()
+
+    # Plot training and test loss
+    plot_train_test_loss()
+
