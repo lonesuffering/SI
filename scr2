@@ -1,0 +1,151 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def generate_dkp(n, scale):
+    """Generuje losowy problem DKP."""
+    items = np.ceil(scale * np.random.rand(n, 2)).astype("int32")
+    capacity = int(np.ceil(0.5 * 0.5 * n * scale))
+    return items, capacity
+
+def solve_dkp(items, capacity):
+    """Rozwiązuje problem DKP dokładnie za pomocą programowania dynamicznego."""
+    n = len(items)
+    dp = np.zeros((n + 1, capacity + 1), dtype=int)
+
+    for i in range(1, n + 1):
+        for w in range(capacity + 1):
+            if items[i - 1, 1] <= w:
+                dp[i, w] = max(dp[i - 1, w], dp[i - 1, w - items[i - 1, 1]] + items[i - 1, 0])
+            else:
+                dp[i, w] = dp[i - 1, w]
+
+    # Odtwarzanie rozwiązania
+    solution = np.zeros(n, dtype=int)
+    w = capacity
+    for i in range(n, 0, -1):
+        if dp[i, w] != dp[i - 1, w]:
+            solution[i - 1] = 1
+            w -= items[i - 1, 1]
+
+    return dp[n, capacity], solution
+
+class GeneticAlgorithm:
+    def __init__(self, n, fitness_function, fitness_args=(), crossover_prob=0.9, mutation_prob=0.001, population_size=1000, iterations=100):
+        """
+        Inicjalizuje algorytm genetyczny.
+
+        Argumenty:
+            n (int): rozmiar problemu (liczba bitów rozwiązania)
+            fitness_function (callable): funkcja przystosowania
+            fitness_args (tuple): dodatkowe argumenty dla funkcji przystosowania
+            crossover_prob (float): prawdopodobieństwo krzyżowania
+            mutation_prob (float): prawdopodobieństwo mutacji
+            population_size (int): rozmiar populacji
+            iterations (int): liczba iteracji algorytmu
+        """
+        self.n = n
+        self.fitness_function = fitness_function
+        self.fitness_args = fitness_args
+        self.crossover_prob = crossover_prob
+        self.mutation_prob = mutation_prob
+        self.population_size = population_size
+        self.iterations = iterations
+
+    def initialize_population(self):
+        """Generuje początkową populację losowych rozwiązań."""
+        return np.random.randint(2, size=(self.population_size, self.n))
+
+    def evaluate_fitness(self, population):
+        """Ocena przystosowania dla populacji."""
+        return np.array([self.fitness_function(ind, *self.fitness_args) for ind in population])
+
+    def roulette_wheel_selection(self, population, fitness):
+        """Selekcja ruletkowa na podstawie wartości przystosowania."""
+        probabilities = fitness / fitness.sum()
+        selected_indices = np.random.choice(len(population), size=len(population), p=probabilities)
+        return population[selected_indices]
+
+    def single_point_crossover(self, parent1, parent2):
+        """Krzyżowanie jednopunktowe."""
+        if np.random.rand() < self.crossover_prob:
+            point = np.random.randint(1, self.n)
+            child1 = np.concatenate((parent1[:point], parent2[point:]))
+            child2 = np.concatenate((parent2[:point], parent1[point:]))
+            return child1, child2
+        return parent1, parent2
+
+    def mutate(self, individual):
+        """Mutacja na poziomie bitowym."""
+        for i in range(len(individual)):
+            if np.random.rand() < self.mutation_prob:
+                individual[i] = 1 - individual[i]
+        return individual
+
+    def run(self):
+        """Główna pętla algorytmu genetycznego."""
+        population = self.initialize_population()
+        best_solution = None
+        best_fitness = -np.inf
+        fitness_history = []
+
+        for _ in range(self.iterations):
+            fitness = self.evaluate_fitness(population)
+            fitness_history.append(fitness.mean())
+
+            if fitness.max() > best_fitness:
+                best_fitness = fitness.max()
+                best_solution = population[fitness.argmax()]
+
+            population = self.roulette_wheel_selection(population, fitness)
+
+            next_population = []
+            for i in range(0, len(population), 2):
+                parent1, parent2 = population[i], population[i + 1 if i + 1 < len(population) else 0]
+                child1, child2 = self.single_point_crossover(parent1, parent2)
+                next_population.append(self.mutate(child1))
+                next_population.append(self.mutate(child2))
+
+            population = np.array(next_population)
+
+        return best_solution, best_fitness, fitness_history
+
+# Funkcja przystosowania dla DKP
+def knapsack_fitness(individual, items, capacity):
+    value = np.sum(individual * items[:, 0])
+    weight = np.sum(individual * items[:, 1])
+    return value if weight <= capacity else 0
+
+# Przykład użycia
+if __name__ == "__main__":
+    # Generowanie problemu DKP
+    n = 50
+    scale = 2000
+    items, capacity = generate_dkp(n, scale)
+
+    # Algorytm genetyczny
+    ga = GeneticAlgorithm(
+        n=n,
+        fitness_function=knapsack_fitness,
+        fitness_args=(items, capacity),
+        population_size=1000,
+        iterations=100
+    )
+
+    best_solution, best_fitness, fitness_history = ga.run()
+
+    # Dokładne rozwiązanie DKP
+    exact_value, exact_solution = solve_dkp(items, capacity)
+
+    # Raport
+    bit_match = np.mean(best_solution == exact_solution) * 100
+    print("Wynik genetyczny:", best_fitness)
+    print("Wynik dokładny:", exact_value)
+    print("Stosunek wartości:", best_fitness / exact_value)
+    print("Procentowa zgodność bitowa:", bit_match)
+
+    # Wykres przystosowania
+    plt.plot(fitness_history)
+    plt.xlabel("Iteracje")
+    plt.ylabel("Średnie przystosowanie populacji")
+    plt.title("Postęp algorytmu genetycznego")
+    plt.show()
